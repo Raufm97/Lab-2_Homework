@@ -1,0 +1,193 @@
+---
+title: "Kingco_Homes"
+author: "Rauf Mirishli"
+date: "2026-10-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## TODO 1: Modifying Dataframes
+```{r}
+library('tidyverse')
+library('kingCoData') 
+data(kingco_homes)
+data("kingco_sales")
+```
+
+```{r}
+# check all column names
+colnames(kingco_homes)
+```
+
+
+```{r}
+Bellevue <- kingco_homes |> 
+  select(`pinx`, `city`, `land_val`, `imp_val`, `sqft`, `view_lakewash`, `view_lakesamm`) |> 
+  filter(city=="BELLEVUE") |> 
+  mutate(total_val=(land_val+imp_val)/1e6) |> 
+  arrange(desc(total_val))
+head(Bellevue,10)
+```
+
+```{r}
+Summary_Bellevue <- Bellevue %>%
+  summarise(avg_total_val = mean(total_val, na.rm = TRUE),
+            var_total_val = var(total_val, na.rm = TRUE))
+Summary_Bellevue
+```
+
+
+```{r}
+Bellevue_with_both_view <-  Bellevue %>%
+  filter(`view_lakewash`==1,`view_lakesamm`==1) |> 
+  summarise(avg_total_val = mean(total_val, na.rm = TRUE),
+            var_total_val = var(total_val, na.rm = TRUE))
+Bellevue_with_both_view
+```
+
+We can see that in Bellevue in average home price is 1.9 mln which is lower than homes that have both view of lake Washington and lake Sammammish in which case average price is 2.6 mln. Additionally, the homes with both views has lower variance as most of these homes have many similar features.
+
+------------------------------------------------------------------------------------
+
+## TODO 2:Summarizing and Joining Dataframes
+```{r}
+kingco_homes_clean <- kingco_homes %>%
+  distinct() %>% 
+  group_by(pinx) %>%
+  slice_max(order_by = land_val + imp_val, n = 1, with_ties = FALSE) %>% 
+  ungroup()
+head(kingco_homes_clean,5)
+```
+
+
+```{r}
+kingco_homes_clean %>% 
+  filter(city=="SEATTLE") %>% 
+  group_by(condition) %>% 
+  summarise(
+    N = n(), 
+    avg_total_value_per_sqft = mean((`land_val` + `imp_val`)/`sqft`, na.rm = TRUE))
+
+```
+------------------------------------------------------------------------------------
+
+## TODO 3: Sampling for Central Limit Theorem
+
+```{r}
+# filter transactions after 2020 in Bellevue
+bellevue_after2020 <- kingco_sales %>%
+  filter(
+    city == "BELLEVUE",
+    sale_date >= as.Date("2020-01-01")
+  )
+```
+
+```{r}
+hist(
+  bellevue_after2020$sale_price,
+  breaks = 50,
+  main = "Histogram of Bellevue Sale Prices after 2020", 
+  xlab = "Sale Price (USD)"                         
+)
+
+```
+
+```{r}
+# calculate the average of bellevue_after2020$sale_price
+sale_price_mean = mean(bellevue_after2020$sale_price)
+sale_price_mean
+```
+
+```{r}
+# create sample means; you don't have to anything
+set.seed(79)
+sample_means <- replicate(
+  200,  # we repeat the process (sample -> sample mean -> record) for 1000 times
+  bellevue_after2020 %>%
+    sample_n(10, replace = TRUE) %>% 
+    summarise(avg_price = mean(sale_price)) %>%
+    pull(avg_price)
+)
+```
+
+```{r}
+hist(
+  sample_means,
+  breaks = 50,
+  main = "Sampling Distribution of Mean Sale Price (n = 10)",
+  xlab = "Sample Mean Sale Price (USD)"
+)
+abline(v = sale_price_mean, col = "red", lwd = 4)
+```
+
+In this case, mean of each sample is not so close to the mean of population, it is evenly distributed and not a normal distribution. It is due to fact that variance of samples has increased as sample size has been reduced from 200 to 10, so not enough to be a good representation of population. If we increase replications to 1000 again, histogram will be right sekwed as it will demonstrate sample means with high variance in right wing and most of means will be centered around left wing as most of homes are around the mean.
+
+------------------------------------------------------------------------------------
+
+## TODO 4: Explore More
+```{r}
+Centres <- kingco_homes_clean %>% 
+  select(`city`, `land_val`, `imp_val`, `sqft`, `view_lakewash`, `view_lakesamm`) |>
+  filter(city%in% c("SEATTLE","BELLEVUE", "KIRKLAND", "REDMOND", "ISSAQUAH", "MERCER ISLAND"),sqft>0
+  )
+head(Centres,10)
+
+```
+
+
+```{r}
+Centres <- Centres %>%
+  mutate(total_val = land_val+imp_val,
+    price_tier = case_when(
+      total_val < 1000000  ~ "Under $1M",
+      total_val < 2000000  ~ "$1M-$2M",
+      total_val < 3000000  ~ "$2M-$3M",
+      TRUE                  ~ "$3M+"
+    ))
+head(Centres,10)
+```
+
+```{r}
+Centres_With_Lake_View <- Centres %>%
+  filter(view_lakewash>=1|view_lakesamm>=1) |> 
+  group_by(city) %>%
+  summarise(
+    n_homes      = n(),
+    mean_value_mln   = mean(total_val)/1e6,
+    mean_value_per_sqft   = mean(total_val/sqft),
+    median_value_mln = median(total_val)/1e6,
+    sd_value_mln     = sd(total_val)/1e6,
+    total_market_bln = n_homes*mean_value_mln/1e3
+  ) %>%
+  arrange(desc(mean_value_per_sqft))
+Centres_With_Lake_View
+```
+
+```{r}
+Centres_Without_Lake_View <- Centres %>%
+  filter(view_lakewash ==0,view_lakesamm ==0) |> 
+  group_by(city) %>%
+  summarise(
+    n_homes      = n(),
+    mean_value_mln   = mean(total_val)/1e6,
+    mean_value_per_sqft   = mean(total_val/sqft),
+    median_value_mln = median(total_val)/1e6,
+    sd_value_mln     = sd(total_val)/1e6,
+    total_market_bln = n_homes*mean_value_mln/1e3
+  ) %>%
+  arrange(desc(mean_value_per_sqft))
+Centres_Without_Lake_View
+```
+
+```{r}
+lake_premium <- Centres_With_Lake_View %>%
+  inner_join(Centres_Without_Lake_View, by = "city", suffix = c("_view", "_noview")) |> mutate(diff_psqft = mean_value_per_sqft_view - mean_value_per_sqft_noview, diff_pct = round(diff_psqft/mean_value_per_sqft_noview*100,1) ) |> 
+  arrange(desc(diff_pct))
+lake_premium
+```
+I firstly tried to bring some columns related to centres around Seattle.Then I categorized properties into 4 groups based on their value. Then, I created two seperate data frames one with lake view other without. My main purpose was to find how much does having lake view adds to the total value. In the last part, I joined the data frames and found the difference per sqft of total property values with lake view and without. Then calculated percentage difference and sorted from top to bottom. No, it is clear that in Issaquah having a lake view increases home value by 40%. Then it is followed by Kirkland where average increase is 38.5% . Having a property in Seattle or in Bellevue with lake view adds only 22-23% to the value.
+
+```{r}
